@@ -26,18 +26,31 @@ names, inheritance.
 
 ### What it does not contain
 
-❌ **Runtime values** — including enum member values
 ❌ **String tables** — no readable character or move names
 ❌ **Method bodies** — no logic, no control flow
+
+🟡 **Correction (Entry 5):** static `Literal` fields — i.e. `const`-like enum
+members and constants — **do** carry their value inline as a `"default"` key,
+e.g. `"WringNeck": { "default": 4, "flags": "... | Static | Literal", ... }`.
+The full `chainsaw.CharacterKindID` table was pulled directly from the static
+dump this way, with no game session, and matched the previously
+live-cross-checked table exactly. What the dump still lacks is **instance
+field values, non-literal statics, and anything requiring a running object**
+— `scripts/dump_enums.lua` remains the right tool for those, and for
+confirming a value on the specific build actually running.
 
 **This limitation caused the project's one significant error.** Character
 identity is expressed entirely as codenames like `ch0_a0z0`; no literal
 `"HUNK"` string exists anywhere. The predecessor project therefore inferred a
 character-to-ID mapping from surrounding class names, and got it wrong. See
-[06-investigation-log.md](06-investigation-log.md), Entry 2.
+[06-investigation-log.md](06-investigation-log.md), Entry 2. That error was
+about *identity from naming*, not about the dump lacking values outright —
+worth separating the two, now that literal enum values are known to be
+readable statically.
 
-**Rule:** the dump tells you what *exists*. It does not tell you what things
-*are*, and it never tells you what values they hold.
+**Rule:** the dump tells you what *exists*, and — for `static | Literal`
+fields only — what constant it holds. It does not tell you what things *do*,
+and it never tells you the state of a running object.
 
 ---
 
@@ -87,15 +100,21 @@ The dump is large. Suggested approach:
 ### Current search targets
 
 ```
-ExecutionPermitter          Execution
-Neck                        Break
+Fatal                        FatalType
+CheckTargetFatal              RequestFatal
+Neck                          Break
 Melee
 BehaviorTreeAction
-Ch6i0z0  Ch6i1z0  Ch6i2z0  Ch6i3z0  Ch6i4z0  Ch6i5z0
+Ch6i1z0  Ch6i3z0  Ch6i4z0     (Ch6i0z0=Leon, Ch6i2z0=Krauser(?), Ch6i5z0=Wesker(?) — see Entry 5)
 ```
 
+`ExecutionPermitter` and `Execution` are no longer priority search terms —
+Entry 5 found `ExecutionPermitter` is a rate limiter, not the gate, and the
+real system is internally called `Fatal`.
+
 Purpose and interpretation:
-[05-hypotheses-and-discriminator.md](05-hypotheses-and-discriminator.md).
+[05-hypotheses-and-discriminator.md](05-hypotheses-and-discriminator.md),
+[06-investigation-log.md](06-investigation-log.md) Entry 5.
 
 ---
 

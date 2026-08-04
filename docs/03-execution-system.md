@@ -36,33 +36,78 @@ follows from that one difference.
 
 ## What has been located
 
-### `chainsaw.ExecutionPermitter`
+### `chainsaw.ExecutionPermitter` — ❌ not the stagger gate
 
-✅ **Confirmed to exist.** Listed among the game's singletons in
-[str0mback/RE4_Overlay](https://github.com/str0mback/RE4_Overlay)'s header
-notes.
-
-🟡 **Inferred role:** the gate deciding whether an execution is permitted
-right now. The name is unusually direct — a class whose only job is permitting
-executions is exactly the component a non-stagger-gated move must bypass.
-
-🟡 **Inferred shape.** The same source documents a sibling manager:
+✅ **Confirmed to exist, full signature now read from the dump** (local
+`il2cpp_dump.json`, RE4R 1.5.9.0, see
+[06-investigation-log.md](06-investigation-log.md) Entry 5):
 
 ```csharp
-chainsaw.EnemyAttackPermitManager.AttackPermitResult
-    checkAttackPermit(chainsaw.CharacterContext attacker,
-                      chainsaw.CharacterContext target)
+// AppSingleton<ExecutionPermitter>
+bool request(chainsaw.ExecutionRequester request)
+void addContext(string key, uint capacity, uint interval)
+
+// chainsaw.ExecutionRequester
+string Key
+uint   LastFrame
+bool   executable()
+
+// chainsaw.ExecutionPermitterBehavior — attached component
+ExecutionPermitterSettings[] SettingList   // { string Key, uint Capacity, uint Interval }
 ```
 
-A `check…Permit(attacker, target) → Result` predicate. Codebases are
-internally consistent, so `ExecutionPermitter` plausibly exposes something
-similar. If it does, it is close to an ideal hook target: a predicate,
-receiving both parties, whose return value can be overridden in a pre-hook
-without touching any object state.
+❌ **The `EnemyAttackPermitManager` analogy from the earlier draft of this
+document was wrong.** `request()` takes no attacker/target pair — only a
+string `Key` and a frame counter. Paired with `SettingList`'s `{Key, Capacity,
+Interval}` triples, this is a **rate limiter**: at most `Capacity` executions
+tagged `Key` may start within `Interval`, plausibly to stop a crowd of
+staggered enemies all executing in sync. It says nothing about whether *this*
+target is eligible for *an* execution — only how many of a given kind may run
+concurrently.
 
-❓ **Unverified:** every word of the two paragraphs above beyond the class
-existing. No method names, no signature, no confirmation it is even involved
-in player executions rather than enemy ones.
+**Do not use this as the gate hook.** See below for the real one.
+
+### `chainsaw.PlayerCondition_CheckTargetFatal` — the actual permit predicate
+
+✅ **Confirmed signature**, found under `chainsaw.Player*` rather than a
+manager singleton:
+
+```csharp
+// chainsaw.PlayerCondition_CheckTargetFatal : chainsaw.PlayerConditionBase
+bool evaluate(chainsaw.PlayerActionArg arg)
+
+// chainsaw.PlayerCondition_CheckTargetFatalNPC : chainsaw.PlayerConditionBase
+bool evaluate(chainsaw.PlayerActionArg arg)
+```
+
+🟡 **Inferred role:** an ordinary behavior-tree `Condition` node — the kind
+evaluated every tick as part of the tree that decides whether the "fatal"
+(RE4R's internal name for execution — see below) branch is reachable. This
+matches the shape [04-neckbreak-decomposition.md](04-neckbreak-decomposition.md)
+asked for: a boolean predicate, hookable in isolation, no state mutation.
+
+❓ **Unverified:** the contents of `PlayerActionArg` (presumably carries the
+target), and whether `...FatalNPC` is a distinct check for non-hostile NPCs or
+an alternate condition for a different enemy category.
+
+### The generic system is called `Fatal`, not `Execution`
+
+✅ Found on the base `Player` class (i.e. campaign Leon):
+
+```csharp
+// chainsaw.PlayerDefine.FatalType (enum)
+None = 0, RoundKick = 1, StraightKick = 2, KnifeFatal = 4
+
+// chainsaw.PlayerBehaviorTreeAction_MFSM_RequestFatal
+//   nested enum: RequestType
+```
+
+❓ **This is Leon's own three-entry list, not a shared registry.** `FatalType`
+is declared on `PlayerDefine`, scoped to the base player character. There is
+no evidence (yet) of a single character-agnostic execution ID enum that a
+HUNK-specific value could be added to — this weakens the easy version of
+Variant A. Mercenaries characters may carry their own private
+`FatalType`-equivalent instead of sharing this one; unconfirmed.
 
 ---
 
@@ -72,11 +117,10 @@ in player executions rather than enemy ones.
 
 | Missing piece | Why it is needed |
 |---|---|
-| Execution **ID enum** | To know what to force |
-| Execution **selector** method | To force it |
-| Permit **predicate** | To bypass the stagger requirement |
+| Execution **selector** method | To force the neck break specifically |
 | **Victim-side** transition | To pull a healthy enemy into the animation |
 | Animation **residency** rules | To know whether HUNK's clip exists in campaign memory |
+| Mercenaries-character-specific `Fatal`-equivalent | To know if `600001`/`600003`/`600004` share `PlayerDefine.FatalType` or have their own |
 
 A GitHub-wide code search across every public repository for RE4R melee and
 execution class names returns **zero results**. Speedrun tools, save editors,

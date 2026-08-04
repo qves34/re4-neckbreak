@@ -18,13 +18,22 @@ kills the runtime approach.
 
 ### Q2 — Which `KindID` is HUNK?
 
-Narrowed to `600001`–`600005`. His classes are named after his codename, so
-nothing can be searched for until this is pinned.
+🟡 Narrowed further to `600001`, `600003`, or `600004`. `600002` and `600005`
+are now plausibly identified as Krauser and Wesker respectively (Bullet Rush
+weapon IDs / Atemi+RedEye+bullet-parry classes — see
+[06-investigation-log.md](06-investigation-log.md) Entry 5), leaving Luis,
+HUNK, and Ada across the remaining three in unknown order. `600003` and
+`600004` have **no** discoverable unique `BehaviorTreeAction`/`Define`/
+`TargetSelector` class at all under direct codename-prefix search — 🟡
+speculatively consistent with HUNK, whose Mercenaries kit has no flashy
+signature ability the way Krauser/Wesker do, but not evidence on its own.
 
-**Resolves by:** `scripts/dump_enums.lua`, then matching codenames against the
-Mercenaries roster. Possibly by setting each ID and observing which the game
-accepts.
-**Cost:** minutes. **Do this first.**
+**Resolves by:** `scripts/dump_enums.lua` for direct in-game confirmation, or
+correlating `chainsaw.Cp1021CharacterSelectMenuActionType`
+(`Character01`–`Character06`) against `CharacterKindID` — that mapping lives
+in game userdata/assets, not the `il2cpp` structure dump, so it needs either a
+live session or an asset-level tool.
+**Cost:** minutes for the enum dump; asset correlation is unscoped.
 
 ---
 
@@ -47,28 +56,28 @@ mod may simply not have tried.
 The likely blocker. A neck break is a synchronised two-actor animation, and
 the transition into "grabbed" may only be legal from the stagger state.
 
-**Resolves by:** hooking the permit predicate and attempting any campaign
-execution on a healthy enemy. Isolates the gate and victim problems from
-selection.
+**Resolves by:** hooking `chainsaw.PlayerCondition_CheckTargetFatal.evaluate`
+(found in Entry 5, replacing the earlier `ExecutionPermitter` guess — see
+Resolved below) to force-return `true`, then attempting any campaign
+`FatalType` finisher on a healthy enemy. Isolates the gate and victim problems
+from selection. **This is now the concrete recommended next action** — see
+[06-investigation-log.md](06-investigation-log.md) Entry 5.
 **Details:** [04-neckbreak-decomposition.md](04-neckbreak-decomposition.md)
-
-### Q5 — What is `chainsaw.ExecutionPermitter`'s interface?
-
-Confirmed to exist; nothing else is known. If it mirrors
-`EnemyAttackPermitManager.checkAttackPermit(attacker, target) → Result`, it is
-close to an ideal hook target.
-
-**Resolves by:** reading its methods in the dump. Trivial once the dump is
-searched.
 
 ---
 
 ## 🟡 Medium
 
-### Q6 — Is there an execution ID enum, and what is in it?
+### Q6b — Is there a Mercenaries-character-specific `Fatal`-equivalent?
 
-Needed for the selection sub-problem. Also feeds Q1 — if such an enum exists
-and contains a neck-break-like entry, that alone argues for Variant A.
+`chainsaw.PlayerDefine.FatalType` (`None`, `RoundKick`, `StraightKick`,
+`KnifeFatal`) is scoped to the base `Player` class, i.e. campaign Leon — it is
+not obviously a shared registry other characters plug into. Whether
+`600001`–`600005` each carry their own private fatal-type enum, or share this
+one via inheritance, is unknown and matters for Variant A's feasibility.
+
+**Resolves by:** once Q2 pins HUNK's codename, search for a
+`Ch6i<N>z0`-scoped fatal/finisher enum analogous to `PlayerDefine.FatalType`.
 
 ### Q7 — How does the Wesker melee mod force specific moves?
 
@@ -148,3 +157,27 @@ character swap.
 ✅ **Yes**, at the asset level — playable Ada and Wesker both demonstrate it.
 Not via character identity, and the result is Leon wearing replaced files.
 → [07-prior-art.md](07-prior-art.md)
+
+### ~~What is `chainsaw.ExecutionPermitter`'s interface, and is it the stagger gate?~~
+
+❌ **No, it is not the gate.** Full signature read from the dump:
+`request(ExecutionRequester) → bool`, where `ExecutionRequester` carries only
+a string `Key` and a frame counter — no attacker/target. Combined with
+`ExecutionPermitterBehavior.SettingList`'s `{Key, Capacity, Interval}`
+triples, this is a **rate limiter** (how many executions of a kind may run
+concurrently), not a per-target eligibility check.
+
+✅ **The real permit predicate is `chainsaw.PlayerCondition_CheckTargetFatal
+.evaluate(PlayerActionArg) → bool`** (plus a sibling `...FatalNPC` variant) —
+an ordinary behavior-tree condition node on the base `Player` class.
+→ [06-investigation-log.md](06-investigation-log.md), Entry 5;
+[03-execution-system.md](03-execution-system.md)
+
+### ~~Is there an execution ID enum, and what is in it?~~
+
+🟡 **Partially.** `chainsaw.PlayerDefine.FatalType` = `None`, `RoundKick`,
+`StraightKick`, `KnifeFatal` — but it is scoped to campaign Leon's own three
+finishers, not a shared cross-character registry. No neck-break-like entry
+exists in it. Whether Mercenaries characters have their own equivalent is
+open — see Q6b above.
+→ [06-investigation-log.md](06-investigation-log.md), Entry 5

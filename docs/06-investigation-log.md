@@ -174,7 +174,166 @@ Details in [07-prior-art.md](07-prior-art.md).
 
 ---
 
-## Next entry
+## Entry 5 — Dump searched; permit hypothesis corrected; real Fatal system found
 
-The next entry should record the Variant A / B / C determination. Until then,
-this project has no findings of its own — only inherited ones.
+**Game build:** RE4R `re4.exe` 1.5.9.0. **REFramework:** revision `5bae4701396248a776c1de19f5be9552022295d5`.
+**Source:** local `il2cpp_dump.json` (1.03 GB), generated 2026-08-03 20:56 local time.
+
+### Method correction
+
+❌ **`08-method-and-tooling.md`'s claim that the dump contains no runtime
+values is too strong for static literal enum fields.** Static `Literal`
+fields carry a `"default"` key with the real value inline, e.g.:
+
+```json
+"WringNeck": { "default": 4, "flags": "... | Static | Literal", "type": "chainsaw.KidnappedEndAction" }
+```
+
+This was used to pull the full `chainsaw.CharacterKindID` table directly from
+the static dump, with no game session:
+
+| KindID | Codename | | KindID | Codename |
+|---|---|---|---|---|
+| `100000` | `ch0_a0z0` (Leon, campaign) | | `600000` | `ch6_i0z0` |
+| `380000` | `ch3_a8z0` (Ada) | | `600001` | `ch6_i1z0` |
+| `500000` | `ch5_j1z0` | | `600002` | `ch6_i2z0` |
+|  |  | | `600003` | `ch6_i3z0` |
+|  |  | | `600004` | `ch6_i4z0` |
+|  |  | | `600005` | `ch6_i5z0` |
+
+✅ Matches the previously corrected table in
+[01-character-identity.md](01-character-identity.md) exactly. `600000`–`600005`
+confirmed as the only Mercenaries-playable range.
+
+⚠️ **Still true and load-bearing:** no string tables, no method bodies. Only
+`static | Literal` fields carry a value at all — instance fields, non-literal
+statics, and every method body remain opaque. Q2 (which of `600001`–`600005`
+is HUNK) is *not* solved by this technique, because identity there is by
+codename, not by a labelled constant.
+
+### `chainsaw.ExecutionPermitter` is not the stagger gate — corrects Q5
+
+❌ **The `EnemyAttackPermitManager` analogy was wrong.** Full signature read
+from the dump:
+
+```csharp
+// chainsaw.ExecutionPermitter (AppSingleton)
+bool request(chainsaw.ExecutionRequester request)
+void addContext(string key, uint capacity, uint interval)
+init() / update() / exit()
+
+// chainsaw.ExecutionRequester
+string Key
+uint   LastFrame
+bool   executable()
+
+// chainsaw.ExecutionPermitterBehavior (attached component)
+ExecutionPermitterSettings[] SettingList   // { string Key, uint Capacity, uint Interval }
+```
+
+✅ **Confirmed role: a rate limiter, not a stagger check.** It takes no
+attacker/target pair at all — only a string `Key` and a frame counter. Given
+the sibling `ExecutionPermitterBehavior.SettingList` of `{Key, Capacity,
+Interval}` triples, this reads as "at most `Capacity` executions tagged `Key`
+may start within `Interval`" — almost certainly a crowd-control throttle so
+multiple staggered enemies don't all execute in sync. **This closes Q5 with a
+negative result:** forcing this predicate open does not touch the stagger
+requirement at all. It is the wrong hook target for Q4.
+
+### The real generic execution system: `Fatal`, not `Execution` — resolves Q6
+
+✅ **RE4R's internal name for the campaign's melee finisher system is
+`Fatal`.** Found on the base `Player` class (i.e. campaign Leon), not on any
+`Ch6i*` class:
+
+```csharp
+// chainsaw.PlayerDefine.FatalType  (enum)
+None = 0, RoundKick = 1, StraightKick = 2, KnifeFatal = 4
+
+// chainsaw.PlayerCondition_CheckTargetFatal : chainsaw.PlayerConditionBase
+bool evaluate(chainsaw.PlayerActionArg arg)
+
+// chainsaw.PlayerCondition_CheckTargetFatalNPC : chainsaw.PlayerConditionBase
+bool evaluate(chainsaw.PlayerActionArg arg)
+
+// chainsaw.PlayerBehaviorTreeAction_MFSM_RequestFatal
+//   nested enum: RequestType
+```
+
+🟡 **`PlayerCondition_CheckTargetFatal.evaluate` is the actual permit
+predicate**, not `ExecutionPermitter`. It is an ordinary behavior-tree
+`Condition` node (`parent: chainsaw.PlayerConditionBase`), evaluated with a
+`PlayerActionArg` — structurally exactly what
+[04-neckbreak-decomposition.md](04-neckbreak-decomposition.md)'s step 5 needs:
+a boolean gate, hookable, no state mutation. Unverified: what `PlayerActionArg`
+carries (presumably includes the target), and whether `...FatalNPC` is a
+separate check for non-hostile NPCs or a variant condition for enemy type.
+
+❓ **`FatalType` only has four members and none resembles a neck break.** This
+enum is declared on `PlayerDefine` — i.e. it is scoped to campaign Leon's own
+three finishers (roundhouse kick, straight kick, knife fatal), **not a
+character-agnostic execution registry**. This is new evidence against a clean
+Variant A: there is no single shared enum that a HUNK-specific value could
+slot into. It does not settle A vs B — Mercenaries characters may carry their
+own private `FatalType`-equivalent — but it removes the easy version of A.
+
+### Partial `Ch6i*` identification — updates Q2, does not resolve it
+
+🟡 **Inferred from surviving signature abilities**, cross-checked against two
+independent classes each (not yet against a third-party source — treat as
+weaker than the ✅ `CharacterKindID` table):
+
+| KindID | Codename | Signal | Read as |
+|---|---|---|---|
+| `600002` | `ch6_i2z0` | Own `Ch6i2z0Define` with 3 `WeaponID` fields named `BULLETRUSH_L/R/WEAPON_ID`, plus `MFSM_EquipFatalKnife`, `MFSM_EquipHookShotFatalMelee`, own `TargetSelector` | 🟡 Krauser — Bullet Rush is his signature Mercenaries ability |
+| `600005` | `ch6_i5z0` | `MFSM_Atemi`, `AtemiSuccess`, `RedEye`, `DisableBulletParry`, `RequestAtemi`, own `TargetSelector`, own `Define` | 🟡 Wesker — bullet-catching parry and glowing red eyes are his signature |
+| `600001` | `ch6_i1z0` | Only one unique class: `BehaviorTreeCondition_CheckFatalRandom` | ❓ Unidentified |
+| `600003` | `ch6_i3z0` | **No unique `BehaviorTreeAction`/`Condition`/`Define`/`TargetSelector` class found** — only the generic `BodyUpdater`/`HeadUpdater` every character has | ❓ Unidentified |
+| `600004` | `ch6_i4z0` | Same as `600003` — no unique class found | ❓ Unidentified |
+
+⚠️ **Do not read the "no unique class" result as absence of a character.**
+Roster is six: Leon (`600000`, confirmed), Luis, Krauser, HUNK, Ada, Wesker.
+`600002` and `600005` are plausibly Krauser and Wesker, leaving Luis, HUNK,
+and Ada across `600001`, `600003`, `600004` in unknown order.
+
+🟡 **Speculative reading, flagged explicitly as weak:** HUNK's Mercenaries kit
+has no flashy unique ability the way Krauser (Bullet Rush) and Wesker (Atemi
+parry) do — his distinguishing feature *is* the neck break itself, on
+otherwise ordinary weapons. A candidate with **no** discoverable
+`BehaviorTreeAction`/`Define`/`TargetSelector` class under this search is
+therefore not disqualifying for HUNK the way it would be for Krauser or
+Wesker. This is a plausibility argument, not evidence — `600003` and `600004`
+remain equally unidentified by it.
+
+A `chainsaw.Cp1021CharacterSelectMenuActionType` enum was also found
+(`Character01`…`Character06`, with `Character01` and `Character05` alone
+carrying a `_01` sub-variant). This is the Mercenaries character-select UI's
+own enum and is plausibly display-order-correlated with `KindID`, but the
+mapping between `Cp1021CharacterSelectMenuActionType` and `CharacterKindID`
+lives in game **userdata/asset resources**, not in the `il2cpp` type
+structure, so it is not resolvable from this dump. ❓ Left open — see
+[09-open-questions.md](09-open-questions.md) Q2.
+
+### Net effect on the discriminator
+
+Q1 (Variant A/B/C) is **still open**, but the search space has changed:
+
+- The stagger-gate hook target is `PlayerCondition_CheckTargetFatal`, not
+  `ExecutionPermitter` — update any future test plan accordingly.
+- The generic `Fatal` system is confirmed to exist and is a plausible home
+  for Variant A/C, but its known enum (`PlayerDefine.FatalType`) is Leon's
+  own three-entry list, not a shared registry — a materially weaker Variant A
+  than hoped.
+- HUNK's `KindID` is narrowed from five candidates to three (`600001`,
+  `600003`, `600004`), with a weak, explicitly-flagged lean toward `600003` or
+  `600004` on the "no signature ability" argument.
+
+### Recommended next step
+
+Per [04-neckbreak-decomposition.md](04-neckbreak-decomposition.md)'s test
+order, step 5 is now concrete and doable without touching HUNK at all: hook
+`chainsaw.PlayerCondition_CheckTargetFatal.evaluate` to force-return `true`
+and attempt any of Leon's existing three `FatalType` finishers on a
+non-staggered enemy in campaign. This tests the gate/victim sub-problems in
+isolation, on a fully generic, already-working system, before spending any
+effort narrowing `600001`/`600003`/`600004` further.

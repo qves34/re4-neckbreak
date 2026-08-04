@@ -42,8 +42,8 @@ feasible at all.
 |---|---|
 | Character identity model (`KindID`) | ✅ Understood, and understood to be a dead end for this goal |
 | Corrected `CharacterKindID` value table | ✅ Verified against three independent tools |
-| Which `KindID` is HUNK | 🟡 Narrowed to `600001`–`600005`, not yet pinned |
-| Execution/melee system | ❓ Barely mapped. One confirmed class name. |
+| Which `KindID` is HUNK | 🟡 Narrowed to `600001`, `600003`, or `600004` |
+| Execution/melee system | 🟡 Real permit predicate and generic `Fatal` enum found; not yet a shared cross-character registry |
 | Neck break implementation | ❓ **Unknown — this is the blocking question** |
 | Instant-kill damage | ✅ Solved (working hook exists in the predecessor project) |
 
