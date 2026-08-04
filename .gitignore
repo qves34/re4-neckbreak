@@ -1,0 +1,10 @@
+# REFramework SDK dumps -- large, and derived from game files
+*.json
+sdk_dump/
+dump/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
